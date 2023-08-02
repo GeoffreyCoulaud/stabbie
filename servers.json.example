@@ -1,0 +1,12 @@
+[
+	{
+		
+		"name": "My server's familiar name",
+		"address": "nfs.myserver.local",
+		"mount_points": [
+			"/mnt/nfs1",
+			"/mnt/nfs2",
+			"/mnt/nfs3"
+		]
+	}
+]
