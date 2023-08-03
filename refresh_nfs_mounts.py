@@ -1,13 +1,14 @@
 #!/bin/python
 
+import re
 import logging
-import json
 import socket
 import subprocess
 import sys
 from pathlib import Path
 from subprocess import SubprocessError
-from typing import Sequence
+from typing import NamedTuple, Sequence
+from functools import lru_cache
 
 
 class MountError(Exception):
@@ -19,21 +20,19 @@ class UnmountError(Exception):
 
 
 class MountPoint:
-    """Class that defines a mount point"""
-
-    mount_point_path: str
+    path: str
     unmount_force: bool = True
     unmount_lazy: bool = True
 
-    def __init__(self, mount_point_path: str) -> None:
-        self.mount_point_path = mount_point_path
+    def __init__(self, path: str) -> None:
+        self.path = path
 
     def __str__(self) -> str:
-        return str(self.mount_point_path)
+        return self.path
 
     @property
     def mount_command(self) -> Sequence[str]:
-        return ["mount", self.mount_point_path]
+        return ["mount", self.path]
 
     @property
     def unmount_command(self) -> Sequence[str]:
@@ -42,13 +41,13 @@ class MountPoint:
             command.append("-f")
         if self.unmount_lazy:
             command.append("-l")
-        command.append(self.mount_point_path)
+        command.append(self.path)
         return command
 
     def check_is_mounted(self) -> bool:
         """Check if the mount point is already mounted"""
         try:
-            return Path(self.mount_point_path).is_mount()
+            return Path(self.path).is_mount()
         except OSError:
             return False
 
@@ -76,10 +75,9 @@ class MountPoint:
 
 
 class Service:
-    """Class representing a distant service"""
-
     host: str
     port: int
+
     check_timeout_seconds: int = 3
 
     def __init__(self, host: str, port: int) -> None:
@@ -89,8 +87,20 @@ class Service:
     def __str__(self) -> str:
         return f"{self.host}:{self.port}"
 
-    def check_connection(self) -> bool:
-        """Check if the service is connectable to"""
+    def __eq__(self, other: "Service") -> bool:
+        return str(self) == str(other)
+
+    def __hash__(self) -> int:
+        return hash(str(self))
+
+    @lru_cache(maxsize=1)
+    def check_is_connectable(self) -> bool:
+        """
+        Check if the service is connectable to
+
+        Cached because the program is short lived and a service is assumed to
+        not change state during a run.
+        """
         try:
             with socket.create_connection(
                 (self.host, self.port), self.check_timeout_seconds, all_errors=True
@@ -100,68 +110,132 @@ class Service:
             return False
 
 
-class NfsServer:
-    """Class representing a NFS server with local mount points"""
+class FstabEntry(NamedTuple):
+    name: str
+    mount_point: MountPoint
+    fs_type: str
+    mount_options: list[str]
+    dump_frequency: int = 0
+    fsck_pass_number: int = 0
 
+    def __str__(self) -> str:
+        return " ".join(self)
+
+
+class RemoteFstabEntry(FstabEntry):
+    __class_service_cache: dict[str, Service] = {}
     service: Service
-    mount_points: Sequence[MountPoint]
 
-    def __init__(self, host: str, mount_points: Sequence[str | MountPoint]) -> None:
-        self.service = Service(host, 2049)
-        self.mount_points = [
-            mount_point
-            if isinstance(mount_point, MountPoint)
-            else MountPoint(mount_point)
-            for mount_point in mount_points
+    def __init__(self, *args, service: Service, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.service = (
+            cached_service
+            if (cached_service := self.__class_service_cache.get(str(service)))
+            is not None
+            else service
+        )
+
+    def refresh_mount_point(self) -> None:
+        """
+        Mount the mount point if the server is connectable, else unmount them.
+        If the mounted state is already achieved, doesn't change it.
+        """
+
+        service_ok = self.service.check_is_connectable()
+        logging.info("Service %s: %s", self.service, "OK" if service_ok else "AWAY")
+        mounted = self.mount_point.check_is_mounted()
+
+        # Easy cases, nothing to do
+        if service_ok and mounted:
+            logging.info("%s skipped, already mounted", self.mount_point.path)
+            return
+        if not service_ok and not mounted:
+            logging.info("%s skipped, already unmounted", self.mount_point.path)
+            return
+
+        # Needs to be mounted
+        if service_ok and not mounted:
+            self.mount_point.mount()
+            logging.info("%s mounted", self.mount_point.path)
+            return
+
+        # Needs to be unmounted
+        if not service_ok and mounted:
+            self.mount_point.unmount()
+            logging.info("%s unmounted", self.mount_point.path)
+            return
+
+
+class NfsFstabEntry(RemoteFstabEntry):
+    remote_path: str
+
+    def __init__(self, *args, **kwargs) -> None:
+        host, remote_path = self.name.split(":")
+        service = Service(host, 2049)
+        super().__init__(*args, service=service, **kwargs)
+        self.remote_path = remote_path
+
+
+class FstabEntryBuilder:
+    def from_line(self, line: str) -> FstabEntry:
+        """Create a fstab entry object from a fstab file line"""
+
+        # Split the fields as strings
+        separator_pattern = "\t "
+        segments = [
+            segment for segment in re.split(separator_pattern, line) if len(segment) > 0
         ]
 
-    def refresh_mount_points(self) -> None:
-        """
-        Mount the mount points if the nfs server is connectable, else unmount them
+        # Get the different items
+        name, mount_point_path, fs_type, *optionals = segments
+        mount_options = optionals[0].split(",") if len(optionals) > 0 else []
+        dump_frequency = int(optionals[1]) if len(optionals) > 1 else 0
+        fsck_pass_number = int(optionals[2]) if len(optionals) > 2 else 0
+        mount_point = MountPoint(mount_point_path)
 
-        :raise ExceptionGroup:
-            Will try every mount point independently and wrap SubprocessError-s.
-        """
-        errors = []
+        # Build the fstab entry
+        klass = NfsFstabEntry if fs_type == "nfs" else FstabEntry
+        return klass(
+            name=name,
+            mount_point=mount_point,
+            fs_type=fs_type,
+            mount_options=mount_options,
+            dump_frequency=dump_frequency,
+            fsck_pass_number=fsck_pass_number,
+        )
 
-        # Check server state
-        server_ok = self.service.check_connection()
-        server_state = "OK" if server_ok else "AWAY"
-        logging.info("NFS service at %s checked: %s", self.service, server_state)
 
-        # Update mount points
-        for mount_point in self.mount_points:
-            mounted = mount_point.check_is_mounted()
-            if server_ok:
-                # Mounting
-                if mounted:
-                    logging.info("%s skipped, already mounted", mount_point)
-                    continue
-                try:
-                    mount_point.mount()
-                except MountError as error:
-                    logging.error("%s couldn't be mounted", mount_point, exc_info=error)
-                    errors.append(error)
-                else:
-                    logging.info("%s mounted", mount_point)
-            else:
-                # Unmounting
-                if not mounted:
-                    logging.info("%s skipped, already unmounted", mount_point)
-                    continue
-                try:
-                    mount_point.unmount()
-                except UnmountError as error:
-                    logging.error(
-                        "%s couldn't be unmounted", mount_point, exc_info=error
-                    )
-                    errors.append(error)
-                else:
-                    logging.info("%s unmounted", mount_point)
+class Fstab:
+    entries: list[FstabEntry]
 
-        # Final report
-        if len(errors) > 0:
-            raise ExceptionGroup("Error while refreshing the mount points", errors)
+    def __init__(self, entries: list[FstabEntry]) -> None:
+        self.entries = entries
+
+    def __str__(self) -> str:
+        return "\n".join(self.entries)
+
+    def __iter__(self):
+        yield from self.entries
+
+
+class FstabBuilder:
+    def __clean_line(self, line: str) -> str:
+        # Remove comment
+        line = line.split("#")[0]
+        # Remove leading and trailing whitespace
+        return line.strip()
+
+    def from_file(self, fstab_path: str = "/etc/fstab") -> "Fstab":
+        """Create a fstab object from the local fstab file"""
+        entry_builder = FstabEntryBuilder()
+        with open(fstab_path, "r", encoding="utf-8") as file:
+            return Fstab(
+                entries=[
+                    entry_builder.from_line(clean_line)
+                    for line in file
+                    if (clean_line := self.__clean_line(line)) != ""
+                ]
+            )
 
 
 def main():
@@ -176,20 +250,21 @@ def main():
     # Configure logging
     logging.basicConfig(level="INFO")
 
-    # Get the raw server and mount points json
-    script_path = Path(__file__)
-    servers_json_path = script_path.parent / "servers.json"
-    servers_json = json.load(servers_json_path.open("r", encoding="utf-8"))
-
-    # Create the server items
-    servers: list[NfsServer] = []
-    for entry in servers_json:
-        server = NfsServer(entry["address"], entry["mount_points"])
-        servers.append(server)
-
-    # Refresh the mount points
-    for server in servers:
-        server.refresh_mount_points()
+    # Refresh mount points for the remote entries of the fstab file
+    # - Services with the same host and port are reused
+    # - Connection checks are cached per service
+    fstab = FstabBuilder().from_file()
+    for entry in (entry for entry in fstab if isinstance(entry, RemoteFstabEntry)):
+        try:
+            entry.refresh_mount_point()
+        except MountError as error:
+            logging.error(
+                "%s couldn't be mounted", entry.mount_point.path, exc_info=error
+            )
+        except UnmountError as error:
+            logging.error(
+                "%s couldn't be unmounted", entry.mount_point.path, exc_info=error
+            )
 
 
 if __name__ == "__main__":
