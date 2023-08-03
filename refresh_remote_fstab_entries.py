@@ -1,16 +1,17 @@
 #!/bin/python
 
-from dataclasses import dataclass, field
-import re
 import logging
+import os
+import re
 import socket
 import subprocess
 import sys
-import os
+from dataclasses import dataclass, field
+from functools import cache, lru_cache
+from logging.config import dictConfig as logging_dict_config
 from pathlib import Path
 from subprocess import SubprocessError
 from typing import Sequence
-from functools import cache, lru_cache
 
 
 class MountError(Exception):
@@ -116,6 +117,18 @@ class FstabEntry:
     dump_frequency: int = 0
     fsck_pass_number: int = 0
 
+    def __str__(self) -> str:
+        return " ".join(
+            (
+                self.name,
+                str(self.mount_point),
+                self.fs_type,
+                ",".join(self.mount_options),
+                str(self.dump_frequency),
+                str(self.fsck_pass_number),
+            )
+        )
+
 
 @dataclass
 class RemoteFstabEntry(FstabEntry):
@@ -211,7 +224,6 @@ class FstabEntryBuilder:
             if len(segment) == 0:
                 continue
             segments.append(segment)
-        logging.debug("fstab entry segments: %s", segments)
 
         # Get the different items
         name, mount_point_path, fs_type, *optionals = segments
@@ -246,7 +258,7 @@ class Fstab:
 
 
 class FstabBuilder:
-    def __clean_line(self, line: str) -> str:
+    def cleanup_line(self, line: str) -> str:
         # Remove comment
         line = line.split("#")[0]
         # Remove leading and trailing whitespace
@@ -255,16 +267,18 @@ class FstabBuilder:
     def from_file(self, fstab_path: str = "/etc/fstab") -> Fstab:
         """Create a fstab object from the local fstab file"""
         entry_builder = FstabEntryBuilder()
-        entries: FstabEntry = []
+        entries: list[FstabEntry] = []
         with open(fstab_path, "r", encoding="utf-8") as file:
             for i, line in enumerate(file):
-                logging.debug("Reading %s line %d", fstab_path, i)
-                cleaned_line = self.__clean_line(line)
+                cleaned_line = self.cleanup_line(line)
                 if len(cleaned_line) == 0:
                     continue
                 entry = entry_builder.from_line(cleaned_line)
+                logging.debug("[%s:%d] Parsed fstab entry: %s", fstab_path, i, entry)
                 entries.append(entry)
-        return Fstab(entries)
+        fstab = Fstab(entries)
+        logging.debug("Loaded fstab from %s with %d entries", fstab_path, len(entries))
+        return fstab
 
 
 def main():
@@ -278,29 +292,67 @@ def main():
 
     # Ensure that we have mount/unmount rights
     if os.geteuid() != 0:
-        print("Insufficient priviledges to mount and unmout")
+        print("Insufficient privileges to mount and unmout")
         sys.exit(1)
 
-    # Configure logging
-    log_level = os.getenv("LOGLEVEL", "INFO")
-    logging.basicConfig(level=log_level)
+    # Get log level from env vars
+    valid_log_levels = logging.getLevelNamesMapping().keys()
+    env_log_level = os.getenv("LOGLEVEL", "INFO")
+    log_level = env_log_level if env_log_level in valid_log_levels else "INFO"
 
-    # TODO consider only entries with a custom x-____ mount option
+    # Configure logging
+    logging_dict_config(
+        {
+            "version": 1,
+            "formatters": {
+                "color_formatter": {
+                    "format": "[{levelname}] {message}",
+                    "style": "{",
+                    "class": "color_log_formatter.ColorLogFormatter",
+                }
+            },
+            "handlers": {
+                "console_handler": {
+                    "class": "logging.StreamHandler",
+                    "level": log_level,
+                    "formatter": "color_formatter",
+                }
+            },
+            "root": {
+                "level": logging.NOTSET,
+                "handlers": ["console_handler"],
+            },
+        }
+    )
+
+    def filter_predicate(entry):
+        """Consider only remote entries with a custom mount option"""
+        x_option = "x-connectable-check"
+        return isinstance(entry, RemoteFstabEntry) and x_option in entry.mount_options
+
+    # Load fstab
+    logging.info("Reading fstab")
+    fstab = FstabBuilder().from_file()
+
     # Refresh mount points for the remote entries of the fstab file
     # - Services with the same host and port are reused
     # - Connection checks are cached per service
-    fstab = FstabBuilder().from_file()
-    for entry in (entry for entry in fstab if isinstance(entry, RemoteFstabEntry)):
+    logging.info("Refreshing remote filesystem mount points")
+    for entry in fstab:
+        # Skip unwanted entries
+        if not filter_predicate(entry):
+            logging.debug("Skipped %s", entry.name)
+            continue
+        # Refresh the entry's mount point
+        logging.info("Refreshing %s", entry.name)
+        path = entry.mount_point.path
         try:
             entry.refresh_mount_point()
         except MountError as error:
-            logging.error(
-                "%s couldn't be mounted", entry.mount_point.path, exc_info=error
-            )
+            logging.error("%s couldn't be mounted", path, exc_info=error)
         except UnmountError as error:
-            logging.error(
-                "%s couldn't be unmounted", entry.mount_point.path, exc_info=error
-            )
+            logging.error("%s couldn't be unmounted", path, exc_info=error)
+    logging.info("Done")
 
 
 if __name__ == "__main__":
