@@ -1,4 +1,4 @@
-#!/bin/python
+#!/bin/python3
 
 import logging
 import os
@@ -297,8 +297,14 @@ def main():
 
     # Get log level from env vars
     valid_log_levels = logging.getLevelNamesMapping().keys()
-    env_log_level = os.getenv("LOGLEVEL", "INFO")
+    env_log_level = os.getenv("LOG_LEVEL", "INFO")
     log_level = env_log_level if env_log_level in valid_log_levels else "INFO"
+
+    # Get colored logs preference
+    color_logs = os.getenv("COLOR_LOGS", "0") == "1"
+    formatter_name = (
+        "color_log_formatter.ColorLogFormatter" if color_logs else "logging.Formatter"
+    )
 
     # Configure logging
     logging_dict_config(
@@ -308,7 +314,7 @@ def main():
                 "color_formatter": {
                     "format": "[{levelname}] {message}",
                     "style": "{",
-                    "class": "color_log_formatter.ColorLogFormatter",
+                    "class": formatter_name,
                 }
             },
             "handlers": {
