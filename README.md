@@ -1,5 +1,5 @@
 # Stabbie 🔪
-The friendly `fstab` auto-mount script for remote filesystems
+A friendly `fstab` auto-mount script for remote filesystems
 
 <!-- Icon goes here -->
 
