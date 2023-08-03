@@ -40,11 +40,11 @@ Stabbie only mounts / unmounts fstab entries
 `stabbie` needs `root` privileges to mount and unmount filesystems.
 ```sh
 # Basic usage
-stabbie.py
+python -m stabbie.stabbie
 
 # Specify log level and color
 # See https://docs.python.org/3/howto/logging.html#logging-levels
-COLOR_LOGS="1" LOG_LEVEL="DEBUG" stabbie.py
+COLOR_LOGS="1" LOG_LEVEL="DEBUG" python -m stabbie.stabbie
 ```
 
 ## 📁 Supported filesystem types
