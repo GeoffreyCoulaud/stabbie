@@ -1,14 +1,16 @@
 #!/bin/python
 
+from dataclasses import dataclass, field
 import re
 import logging
 import socket
 import subprocess
 import sys
+import os
 from pathlib import Path
 from subprocess import SubprocessError
-from typing import NamedTuple, Sequence
-from functools import lru_cache
+from typing import Sequence
+from functools import cache, lru_cache
 
 
 class MountError(Exception):
@@ -84,6 +86,11 @@ class Service:
         self.host = host
         self.port = port
 
+    @classmethod
+    @cache
+    def new_cached(cls, *args, **kwargs) -> "Service":
+        return Service(*args, **kwargs)
+
     def __str__(self) -> str:
         return f"{self.host}:{self.port}"
 
@@ -110,7 +117,8 @@ class Service:
             return False
 
 
-class FstabEntry(NamedTuple):
+@dataclass
+class FstabEntry:
     name: str
     mount_point: MountPoint
     fs_type: str
@@ -118,21 +126,15 @@ class FstabEntry(NamedTuple):
     dump_frequency: int = 0
     fsck_pass_number: int = 0
 
-    def __str__(self) -> str:
-        return " ".join(self)
 
-
+@dataclass
 class RemoteFstabEntry(FstabEntry):
-    __class_service_cache: dict[str, Service] = {}
-    service: Service
+    """
+    Abstract class representing an fstab entry pointing to a remote filesystem.
+    Instanciate one of the child classes, not this one.
+    """
 
-    def __init__(self, *args, service: Service, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        if cached_service := self.__class_service_cache.get(str(service)) is not None:
-            self.service = cached_service
-        else:
-            self.service = service
-            self.__class_service_cache[str(service)] = service
+    service: Service = field(init=False)
 
     def refresh_mount_point(self) -> None:
         """
@@ -165,13 +167,13 @@ class RemoteFstabEntry(FstabEntry):
             return
 
 
+@dataclass
 class NfsFstabEntry(RemoteFstabEntry):
-    remote_path: str
+    remote_path: str = field(init=False)
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __post_init__(self) -> None:
         host, remote_path = self.name.split(":")
-        service = Service(host, 2049)
-        super().__init__(*args, service=service, **kwargs)
+        self.service = Service.new_cached(host, 2049)
         self.remote_path = remote_path
 
 
@@ -180,10 +182,13 @@ class FstabEntryBuilder:
         """Create a fstab entry object from a fstab file line"""
 
         # Split the fields as strings
-        separator_pattern = "\t "
-        segments = [
-            segment for segment in re.split(separator_pattern, line) if len(segment) > 0
-        ]
+        separator_pattern = "\t| "
+        segments: list[str] = []
+        for segment in re.split(separator_pattern, line):
+            if len(segment) == 0:
+                continue
+            segments.append(segment)
+        logging.debug("fstab entry segments: %s", segments)
 
         # Get the different items
         name, mount_point_path, fs_type, *optionals = segments
@@ -224,17 +229,19 @@ class FstabBuilder:
         # Remove leading and trailing whitespace
         return line.strip()
 
-    def from_file(self, fstab_path: str = "/etc/fstab") -> "Fstab":
+    def from_file(self, fstab_path: str = "/etc/fstab") -> Fstab:
         """Create a fstab object from the local fstab file"""
         entry_builder = FstabEntryBuilder()
+        entries: FstabEntry = []
         with open(fstab_path, "r", encoding="utf-8") as file:
-            return Fstab(
-                entries=[
-                    entry_builder.from_line(clean_line)
-                    for line in file
-                    if (clean_line := self.__clean_line(line)) != ""
-                ]
-            )
+            for i, line in enumerate(file):
+                logging.debug("Reading %s line %d", fstab_path, i)
+                cleaned_line = self.__clean_line(line)
+                if len(cleaned_line) == 0:
+                    continue
+                entry = entry_builder.from_line(cleaned_line)
+                entries.append(entry)
+        return Fstab(entries)
 
 
 def main():
@@ -246,8 +253,14 @@ def main():
         print("This script expects python 3.11 or newer")
         sys.exit(1)
 
+    # Ensure that we have mount/unmount rights
+    if os.geteuid() != 0:
+        print("Insufficient priviledges to mount and unmout")
+        sys.exit(1)
+
     # Configure logging
-    logging.basicConfig(level="INFO")
+    log_level = os.getenv("LOGLEVEL", "INFO")
+    logging.basicConfig(level=log_level)
 
     # Refresh mount points for the remote entries of the fstab file
     # - Services with the same host and port are reused
