@@ -54,22 +54,12 @@ class MountPoint:
             return False
 
     def mount(self):
-        """
-        Mount the mount points already described in /etc/fstab
-
-        :raises SubprocessError: if an error happens during the `mount` command
-        """
         try:
             subprocess.run(self.mount_command, check=True)
         except SubprocessError as error:
             raise MountError() from error
 
     def unmount(self):
-        """
-        Unmount the given mount points
-
-        :raises SubprocessError: if an error happens during the `umount` command
-        """
         try:
             subprocess.run(self.unmount_command, check=True)
         except SubprocessError as error:
@@ -103,7 +93,7 @@ class Service:
     @lru_cache(maxsize=1)
     def check_is_connectable(self) -> bool:
         """
-        Check if the service is connectable to
+        Check if the service is connectable.
 
         Cached because the program is short lived and a service is assumed to
         not change state during a run.
@@ -262,6 +252,7 @@ def main():
     log_level = os.getenv("LOGLEVEL", "INFO")
     logging.basicConfig(level=log_level)
 
+    # TODO consider only entries with a custom x-____ mount option
     # Refresh mount points for the remote entries of the fstab file
     # - Services with the same host and port are reused
     # - Connection checks are cached per service
