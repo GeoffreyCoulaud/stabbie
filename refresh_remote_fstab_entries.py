@@ -128,12 +128,11 @@ class RemoteFstabEntry(FstabEntry):
 
     def __init__(self, *args, service: Service, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.service = (
-            cached_service
-            if (cached_service := self.__class_service_cache.get(str(service)))
-            is not None
-            else service
-        )
+        if cached_service := self.__class_service_cache.get(str(service)) is not None:
+            self.service = cached_service
+        else:
+            self.service = service
+            self.__class_service_cache[str(service)] = service
 
     def refresh_mount_point(self) -> None:
         """
