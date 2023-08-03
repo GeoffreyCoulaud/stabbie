@@ -34,7 +34,7 @@ You just have to run `stabbie` when the network status changes to automatically 
 ### fstab
 Stabbie only mounts / unmounts fstab entries
 * Marked with the option `x-stabbie`
-* Of the [supported filesystem types](#📁-supported-filesystem-types)
+* Of the [supported filesystem types](#-supported-filesystem-types)
 
 ### Command
 `stabbie` needs `root` privileges to mount and unmount filesystems.
