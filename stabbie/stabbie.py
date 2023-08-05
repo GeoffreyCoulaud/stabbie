@@ -4,8 +4,8 @@ import logging
 import os
 import sys
 from logging.config import dictConfig as logging_dict_config
+from multiprocessing import Pool
 
-from stabbie.fstab.entry.mount_point import MountError, UnmountError
 from stabbie.fstab.entry.fstab_entry import FstabEntry
 from stabbie.fstab.entry.remote_fstab_entry import RemoteFstabEntry
 from stabbie.fstab.fstab import FstabBuilder
@@ -17,6 +17,11 @@ class Application:
     stabbie_mount_option = "x-stabbie"
     stabbie_version = (1, 0, 0)
     stabbie_expected_python_version = (3, 11)
+
+    __refresh_errors: list[Exception]
+
+    def __init__(self) -> None:
+        self.__refresh_errors = []
 
     def __check_python_version(self) -> None:
         major, minor, *_rest = sys.version_info
@@ -73,6 +78,14 @@ class Application:
             and self.stabbie_mount_option in entry.mount_options
         )
 
+    @classmethod
+    def refresh_remote_fstab_entry(cls, entry: RemoteFstabEntry) -> None:
+        logging.info("Refreshing %s", entry.name)
+        entry.refresh_mount_point()
+
+    def refresh_error_callback(self, error: Exception) -> None:
+        self.__refresh_errors.append(error)
+
     def run(self):
         self.__check_python_version()
         self.__check_mount_permissions()
@@ -86,20 +99,20 @@ class Application:
         # - Services with the same host and port are reused
         # - Connection checks are cached per service
         logging.info("Refreshing remote filesystem mount points")
-        errors: dict[str, Exception] = {}
-        for entry in filter(self.fstab_entries_filter_key, fstab):
-            logging.info("Refreshing %s", entry.name)
-            try:
-                entry.refresh_mount_point()
-            except (MountError, UnmountError) as error:
-                errors[entry.mount_point.path] = error
+        with Pool() as pool:
+            pool.map_async(
+                Application.refresh_remote_fstab_entry,
+                filter(self.fstab_entries_filter_key, fstab),
+            )
+            pool.close()
+            pool.join()
 
         # Errors summary
+        errors = self.__refresh_errors
         if len(errors) > 0:
-            exception_group = ExceptionGroup("Mount point errors", errors)
             logging.warning(
-                "Some mount points couldn't be mounted or unmounted",
-                exc_info=exception_group,
+                "Some mount points couldn't be refreshed",
+                exc_info=ExceptionGroup("Refresh errors", errors),
             )
 
         logging.info("Done")
