@@ -5,8 +5,10 @@ import os
 import sys
 from logging.config import dictConfig as logging_dict_config
 
-from stabbie.fstab.fstab import FstabBuilder, FstabEntry, RemoteFstabEntry
-from stabbie.fstab.mount_point import MountError, UnmountError
+from stabbie.fstab.entry.mount_point import MountError, UnmountError
+from stabbie.fstab.entry.fstab_entry import FstabEntry
+from stabbie.fstab.entry.remote_fstab_entry import RemoteFstabEntry
+from stabbie.fstab.fstab import FstabBuilder
 
 
 class Application:
@@ -34,7 +36,7 @@ class Application:
         log_level = env_log_level if env_log_level in valid_log_levels else "INFO"
 
         # Get colored logs preference
-        color_fomatter = "app_logging.color_log_formatter.ColorLogFormatter"
+        color_fomatter = "stabbie.logging.color_log_formatter.ColorLogFormatter"
         base_formatter = "logging.Formatter"
         color_logs = os.getenv("COLOR_LOGS", "0") == "1"
         formatter_qualified_name = color_fomatter if color_logs else base_formatter

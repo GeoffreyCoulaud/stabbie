@@ -1,6 +1,9 @@
 # Stabbie 🔪
 A friendly `fstab` auto-mount script for remote filesystems
 
+## ⚠️ Disclaimer  
+This is a Work-In-Progress side-project, **do not use stabbie with critical data or systems**.
+
 <!-- Icon goes here -->
 
 ## ✨ Features
