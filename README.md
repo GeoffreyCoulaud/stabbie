@@ -27,27 +27,35 @@ So, when you're home or when you connect to the VPN.
 
 You just have to run `stabbie` when the network status changes to automatically mount or unmount the shares depending on the situation.
 
-## 🔧 Usage
+## 🔧 Installation and Usage
 
 ### Prerequisites
 * Linux environment
 * fstab at `/etc/fstab`
 * Python 3.11 or newer
 
-### fstab
-Stabbie only mounts / unmounts fstab entries
+### `fstab` structure
+Stabbie only mounts and unmounts fstab entries:
 * Marked with the option `x-stabbie`
 * Of the [supported filesystem types](#-supported-filesystem-types)
 
-### Command
+### Installation
+
+Install from source
+```
+pip install git+https://github.com/GeoffreyCoulaud/stabbie.git
+```
+
+### Usage
+
 `stabbie` needs `root` privileges to mount and unmount filesystems.
+
 ```sh
 # Basic usage
-python -m stabbie.stabbie
-
+stabbie
 # Specify log level and color
 # See https://docs.python.org/3/howto/logging.html#logging-levels
-COLOR_LOGS="1" LOG_LEVEL="DEBUG" python -m stabbie.stabbie
+COLOR_LOGS="1" LOG_LEVEL="DEBUG" stabbie
 ```
 
 ## 📁 Supported filesystem types

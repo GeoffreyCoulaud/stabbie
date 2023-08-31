@@ -46,5 +46,9 @@ class NfsMountOptions:
         default_port = 2049 if version == 4 else 0
         port = int(options_mapping.get("port", default_port))
         if port == 0:
-            logging.warning("RPC discovery of NFS port is not implemented")
+            logging.warning(
+                "RPC discovery of NFS port is not implemented."
+                + "\nSpecify port=<NFS_PORT> in the mount options."
+                + "\nTip: The default NFS port is 2049"
+            )
         return NfsMountOptions(version, port)

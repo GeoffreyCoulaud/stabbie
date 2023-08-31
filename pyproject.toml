@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stabbie"
+description = "A friendly fstab auto-mount script for remote filesystems"
+keywords = [
+	"fstab",
+	"mounting",
+	"linux",
+	"network share",
+	"nfs"
+]
+license = {text = "GPLv3"}
+classifiers = [
+	"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3",
+	"Operating System :: POSIX :: Linux",
+	"Topic :: System :: Filesystems"
+]
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+	# Nothing but stdlib
+]
+
+[project.scripts]
+stabbie = "stabbie.stabbie:main"

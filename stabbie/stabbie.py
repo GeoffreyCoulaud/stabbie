@@ -15,19 +15,11 @@ class Application:
     """Class representing the stabbie application"""
 
     stabbie_mount_option = "x-stabbie"
-    stabbie_version = (1, 0, 0)
-    stabbie_expected_python_version = (3, 11)
 
     __refresh_errors: list[Exception]
 
     def __init__(self) -> None:
         self.__refresh_errors = []
-
-    def __check_python_version(self) -> None:
-        major, minor, *_rest = sys.version_info
-        expected_major, expected_minor = self.stabbie_expected_python_version
-        message = f"Expects python {expected_major}.{expected_minor} or newer"
-        assert major == expected_major and minor >= expected_minor, message
 
     def __check_mount_permissions(self) -> None:
         assert os.geteuid() == 0, "Insufficient privileges to mount and unmout"
@@ -87,7 +79,6 @@ class Application:
         self.__refresh_errors.append(error)
 
     def run(self):
-        self.__check_python_version()
         self.__check_mount_permissions()
         self.__setup_logging()
 
@@ -118,7 +109,11 @@ class Application:
         logging.info("Done")
 
 
-if __name__ == "__main__":
+def main():
     app = Application()
     app.run()
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
