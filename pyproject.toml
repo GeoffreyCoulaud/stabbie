@@ -12,6 +12,7 @@ keywords = [
 	"network share",
 	"nfs"
 ]
+readme = "README.md"
 license = {text = "GPLv3"}
 classifiers = [
 	"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -20,7 +21,7 @@ classifiers = [
 	"Operating System :: POSIX :: Linux",
 	"Topic :: System :: Filesystems"
 ]
-version = "1.0.0"
+version = "1.0.1"
 requires-python = ">=3.11"
 dependencies = [
 	# Nothing but stdlib
