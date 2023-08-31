@@ -41,7 +41,12 @@ Stabbie only mounts and unmounts fstab entries:
 
 ### Installation
 
-Install from source
+Install using pip, from pypi
+```
+pip install stabbie
+```
+
+Install from source, if for some reason you can't use another method
 ```
 pip install git+https://github.com/GeoffreyCoulaud/stabbie.git
 ```
