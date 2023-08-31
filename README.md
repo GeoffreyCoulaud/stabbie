@@ -48,15 +48,18 @@ pip install git+https://github.com/GeoffreyCoulaud/stabbie.git
 
 ### Usage
 
-`stabbie` needs `root` privileges to mount and unmount filesystems.
+`stabbie` needs root privileges to mount and unmount.
 
-```sh
-# Basic usage
-stabbie
-# Specify log level and color
-# See https://docs.python.org/3/howto/logging.html#logging-levels
-COLOR_LOGS="1" LOG_LEVEL="DEBUG" stabbie
+Basic usage:
 ```
+stabbie
+```
+
+You can get an up to date list of arguments from the integrated help:
+```
+stabbie --help
+```
+
 
 ## 📁 Supported filesystem types
 

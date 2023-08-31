@@ -1,5 +1,6 @@
 #!/bin/python3
 
+from argparse import ArgumentParser
 import logging
 import os
 import sys
@@ -15,28 +16,38 @@ class Application:
     """Class representing the stabbie application"""
 
     stabbie_mount_option = "x-stabbie"
+    use_color_logs: bool = True
+    log_level: str = "INFO"
 
     __refresh_errors: list[Exception]
 
+    def __parse_cli_args(self) -> None:
+        """Parse cli args with argparse to configure the app"""
+        parser = ArgumentParser(
+            prog="stabbie",
+            description="A friendly fstab auto-mount script for remote filesystems",
+        )
+        parser.add_argument("--color", action="store_true", help="use color for logs")
+        parser.add_argument(
+            "--log-level",
+            type=str,
+            default=Application.log_level,
+            help="logging level to use",
+            choices=logging.getLevelNamesMapping().keys(),
+        )
+        args = parser.parse_args()
+        self.use_color_logs = args.color
+        self.log_level = args.log_level
+
     def __init__(self) -> None:
         self.__refresh_errors = []
+        self.__parse_cli_args()
 
     def __check_mount_permissions(self) -> None:
         assert os.geteuid() == 0, "Insufficient privileges to mount and unmout"
 
     def __setup_logging(self) -> None:
         """Setup logging for the app"""
-
-        # Get log level from env vars
-        valid_log_levels = logging.getLevelNamesMapping().keys()
-        env_log_level = os.getenv("LOG_LEVEL", "INFO")
-        log_level = env_log_level if env_log_level in valid_log_levels else "INFO"
-
-        # Get colored logs preference
-        color_fomatter = "stabbie.logging.color_log_formatter.ColorLogFormatter"
-        base_formatter = "logging.Formatter"
-        color_logs = os.getenv("COLOR_LOGS", "0") == "1"
-        formatter_qualified_name = color_fomatter if color_logs else base_formatter
 
         # Configure logging
         logging_dict_config(
@@ -46,13 +57,17 @@ class Application:
                     "color_formatter": {
                         "format": "[{levelname}] {message}",
                         "style": "{",
-                        "class": formatter_qualified_name,
+                        "class": (
+                            "stabbie.logging.color_log_formatter.ColorLogFormatter"
+                            if self.use_color_logs
+                            else "logging.Formatter"
+                        ),
                     }
                 },
                 "handlers": {
                     "console_handler": {
                         "class": "logging.StreamHandler",
-                        "level": log_level,
+                        "level": self.log_level,
                         "formatter": "color_formatter",
                     }
                 },
