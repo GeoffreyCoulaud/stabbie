@@ -21,11 +21,15 @@ classifiers = [
 	"Operating System :: POSIX :: Linux",
 	"Topic :: System :: Filesystems"
 ]
-version = "1.0.1"
+version = "1.0.2"
 requires-python = ">=3.11"
 dependencies = [
 	# Nothing but stdlib
 ]
+
+[project.urls]
+Homepage = "https://github.com/GeoffreyCoulaud/stabbie"
+Repository = "https://github.com/GeoffreyCoulaud/stabbie.git"
 
 [project.scripts]
 stabbie = "stabbie.stabbie:main"
